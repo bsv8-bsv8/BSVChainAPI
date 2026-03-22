@@ -11,15 +11,18 @@ type Manager struct {
 }
 
 type routeRuntime struct {
-	route    Route
-	endpoint Endpoint
-	gate     *turnGate
+	route        Route
+	endpoint     Endpoint
+	capabilities []Capability
 }
 
 func NewManager(cfg Config, extraProviders ...Provider) (*Manager, error) {
 	providers := append([]Provider{
 		NewWhatsOnChainProvider(),
 		NewBitailsProvider(),
+		NewGorillaPoolARCProvider(),
+		NewTAALARCProvider(),
+		NewTAALLegacyProvider(),
 	}, extraProviders...)
 	return NewManagerWithProviders(cfg, providers...)
 }
@@ -57,10 +60,15 @@ func NewManagerWithProviders(cfg Config, providers ...Provider) (*Manager, error
 		if err != nil {
 			return nil, err
 		}
+		endpoint = NewProtectedEndpoint(endpoint, rc.Protect.MinInterval)
+		caps := normalizeCapabilities(endpoint.Capabilities())
+		if len(caps) == 0 {
+			return nil, fmt.Errorf("provider capabilities are required: %s", key)
+		}
 		out.routes[key] = &routeRuntime{
-			route:    route,
-			endpoint: endpoint,
-			gate:     newTurnGate(rc.Protect.MinInterval),
+			route:        route,
+			endpoint:     endpoint,
+			capabilities: caps,
 		}
 	}
 	return out, nil
@@ -75,7 +83,7 @@ func (m *Manager) GetUTXOsContext(ctx context.Context, route Route, address stri
 	if err != nil {
 		return nil, err
 	}
-	if err := rt.gate.Wait(ctx); err != nil {
+	if err := rt.requireCapability(CapabilityGetUTXOs); err != nil {
 		return nil, err
 	}
 	return rt.endpoint.GetUTXOsContext(ctx, address)
@@ -90,7 +98,7 @@ func (m *Manager) GetTipHeightContext(ctx context.Context, route Route) (uint32,
 	if err != nil {
 		return 0, err
 	}
-	if err := rt.gate.Wait(ctx); err != nil {
+	if err := rt.requireCapability(CapabilityGetTipHeight); err != nil {
 		return 0, err
 	}
 	return rt.endpoint.GetTipHeightContext(ctx)
@@ -105,7 +113,7 @@ func (m *Manager) BroadcastContext(ctx context.Context, route Route, txHex strin
 	if err != nil {
 		return "", err
 	}
-	if err := rt.gate.Wait(ctx); err != nil {
+	if err := rt.requireCapability(CapabilityBroadcast); err != nil {
 		return "", err
 	}
 	return rt.endpoint.BroadcastContext(ctx, txHex)
@@ -120,10 +128,25 @@ func (m *Manager) GetTxDetailContext(ctx context.Context, route Route, txid stri
 	if err != nil {
 		return TxDetail{}, err
 	}
-	if err := rt.gate.Wait(ctx); err != nil {
+	if err := rt.requireCapability(CapabilityGetTxDetail); err != nil {
 		return TxDetail{}, err
 	}
 	return rt.endpoint.GetTxDetailContext(ctx, txid)
+}
+
+func (m *Manager) GetRouteInfo(route Route) (RouteInfo, error) {
+	return m.GetRouteInfoContext(context.Background(), route)
+}
+
+func (m *Manager) GetRouteInfoContext(ctx context.Context, route Route) (RouteInfo, error) {
+	rt, err := m.resolve(route)
+	if err != nil {
+		return RouteInfo{}, err
+	}
+	return RouteInfo{
+		Route:        rt.route,
+		Capabilities: append([]Capability(nil), rt.capabilities...),
+	}, nil
 }
 
 func (m *Manager) resolve(route Route) (*routeRuntime, error) {
@@ -136,4 +159,14 @@ func (m *Manager) resolve(route Route) (*routeRuntime, error) {
 		return nil, fmt.Errorf("route not found: %s", key)
 	}
 	return rt, nil
+}
+
+func (rt *routeRuntime) requireCapability(cap Capability) error {
+	if rt == nil {
+		return fmt.Errorf("route runtime is nil")
+	}
+	if hasCapability(rt.capabilities, cap) {
+		return nil
+	}
+	return unsupportedCapabilityError(rt.route, cap)
 }

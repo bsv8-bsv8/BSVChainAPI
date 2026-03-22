@@ -26,6 +26,15 @@ func (whatsOnChainProvider) Name() string {
 	return WhatsOnChainProvider
 }
 
+func (whatsOnChainProvider) Capabilities() []Capability {
+	return []Capability{
+		CapabilityBroadcast,
+		CapabilityGetTipHeight,
+		CapabilityGetTxDetail,
+		CapabilityGetUTXOs,
+	}
+}
+
 func (whatsOnChainProvider) NewEndpoint(cfg RouteConfig) (Endpoint, error) {
 	route := cfg.Route()
 	if route.Provider != WhatsOnChainProvider {
@@ -42,6 +51,10 @@ func (whatsOnChainProvider) NewEndpoint(cfg RouteConfig) (Endpoint, error) {
 			Value: cfg.Auth.Value,
 		}),
 	}, nil
+}
+
+func (e *whatsOnChainEndpoint) Capabilities() []Capability {
+	return whatsOnChainProvider{}.Capabilities()
 }
 
 func (e *whatsOnChainEndpoint) GetUTXOsContext(ctx context.Context, address string) ([]UTXO, error) {

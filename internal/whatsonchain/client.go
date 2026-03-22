@@ -77,6 +77,20 @@ func (e *HTTPError) Error() string {
 	return fmt.Sprintf("http %d: %s", e.StatusCode, e.Body)
 }
 
+func (e *HTTPError) HTTPStatus() int {
+	if e == nil {
+		return 0
+	}
+	return e.StatusCode
+}
+
+func (e *HTTPError) HTTPBody() string {
+	if e == nil {
+		return ""
+	}
+	return e.Body
+}
+
 func NewClient(baseURL string, auth AuthConfig) *Client {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {

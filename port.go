@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,8 +13,9 @@ import (
 )
 
 const (
-	ServiceName    = "bsv-chainapi"
-	ServiceVersion = "0.1.0"
+	ServiceName        = "bsv-chainapi"
+	ServiceVersion     = "0.1.0"
+	defaultPortTimeout = 30 * time.Second
 )
 
 type PortServer struct {
@@ -31,6 +33,7 @@ func (s *PortServer) Handler() http.Handler {
 	mux.HandleFunc("/v1/get-tip-height", s.handleGetTipHeight)
 	mux.HandleFunc("/v1/broadcast", s.handleBroadcast)
 	mux.HandleFunc("/v1/get-tx-detail", s.handleGetTxDetail)
+	mux.HandleFunc("/v1/get-route-info", s.handleGetRouteInfo)
 	return mux
 }
 
@@ -39,12 +42,38 @@ type PortClient struct {
 	http    *http.Client
 }
 
+type portHTTPError struct {
+	statusCode int
+	body       string
+}
+
+func (e *portHTTPError) Error() string {
+	if e == nil {
+		return "http error"
+	}
+	return fmt.Sprintf("http %d: %s", e.statusCode, e.body)
+}
+
+func (e *portHTTPError) HTTPStatus() int {
+	if e == nil {
+		return 0
+	}
+	return e.statusCode
+}
+
+func (e *portHTTPError) HTTPBody() string {
+	if e == nil {
+		return ""
+	}
+	return e.body
+}
+
 func NewPortClient(baseURL string) *PortClient {
 	u := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	return &PortClient{
 		baseURL: u,
 		http: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: defaultPortTimeout,
 		},
 	}
 }
@@ -106,6 +135,22 @@ func (c *PortClient) GetTxDetailContext(ctx context.Context, route Route, txid s
 	return resp.Tx, nil
 }
 
+func (c *PortClient) GetRouteInfoContext(ctx context.Context, route Route) (RouteInfo, error) {
+	var resp struct {
+		Route        Route        `json:"route"`
+		Capabilities []Capability `json:"capabilities"`
+	}
+	if err := c.postJSON(ctx, "/v1/get-route-info", map[string]any{
+		"route": route.Normalize(),
+	}, &resp); err != nil {
+		return RouteInfo{}, err
+	}
+	return RouteInfo{
+		Route:        resp.Route,
+		Capabilities: normalizeCapabilities(resp.Capabilities),
+	}, nil
+}
+
 func (c *PortClient) postJSON(ctx context.Context, path string, payload any, out any) error {
 	if c == nil {
 		return fmt.Errorf("port client is nil")
@@ -124,12 +169,15 @@ func (c *PortClient) postJSON(ctx context.Context, path string, payload any, out
 		return err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp.Body)
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("http %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return &portHTTPError{
+			statusCode: resp.StatusCode,
+			body:       strings.TrimSpace(string(body)),
+		}
 	}
 	if out == nil {
 		return nil
@@ -215,6 +263,24 @@ func (s *PortServer) handleGetTxDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"tx": txj})
 }
 
+func (s *PortServer) handleGetRouteInfo(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Route Route `json:"route"`
+	}
+	if !decodeRequest(w, r, &req) {
+		return
+	}
+	info, err := s.api.GetRouteInfoContext(r.Context(), req.Route)
+	if err != nil {
+		writeJSON(w, classifyStatus(err), map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"route":        info.Route,
+		"capabilities": info.Capabilities,
+	})
+}
+
 func decodeRequest(w http.ResponseWriter, r *http.Request, out any) bool {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
@@ -231,10 +297,14 @@ func classifyStatus(err error) int {
 	if err == nil {
 		return http.StatusOK
 	}
+	if errors.Is(err, ErrCapabilityUnsupported) {
+		return http.StatusBadRequest
+	}
 	msg := strings.ToLower(strings.TrimSpace(err.Error()))
 	switch {
 	case strings.Contains(msg, "route not found"),
 		strings.Contains(msg, "provider not registered"),
+		strings.Contains(msg, "capability unsupported"),
 		strings.Contains(msg, "required"),
 		strings.Contains(msg, "unsupported"),
 		strings.Contains(msg, "invalid"):
@@ -255,4 +325,8 @@ func ctxOrBackground(ctx context.Context) context.Context {
 		return context.Background()
 	}
 	return ctx
+}
+
+func readBody(r io.Reader) ([]byte, error) {
+	return io.ReadAll(r)
 }

@@ -17,12 +17,18 @@ type API interface {
 	GetTipHeightContext(ctx context.Context, route Route) (uint32, error)
 	BroadcastContext(ctx context.Context, route Route, txHex string) (string, error)
 	GetTxDetailContext(ctx context.Context, route Route, txid string) (TxDetail, error)
+	GetRouteInfoContext(ctx context.Context, route Route) (RouteInfo, error)
 }
 
 type Route struct {
 	Provider string `json:"provider"`
 	Network  string `json:"network"`
 	Profile  string `json:"profile,omitempty"`
+}
+
+type RouteInfo struct {
+	Route        Route        `json:"route"`
+	Capabilities []Capability `json:"capabilities"`
 }
 
 func (r Route) Normalize() Route {

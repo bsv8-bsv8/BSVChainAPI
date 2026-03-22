@@ -15,7 +15,7 @@
 - 每次调用显式传 `provider + network + profile`。
 - 认证差异不进入业务 API，通过 `profile` 对应的路由配置解决。
 - HTTP 端口协议是独立 JSON，不镜像上游 Whatsonchain / Bitails。
-- 当前已接入真实 provider：`whatsonchain`、`bitails`。
+- 当前已接入真实 provider：`whatsonchain`、`bitails`、`gorillapool_arc`、`taal_arc`、`taal_legacy`。
 
 最小配置示例：
 
@@ -83,3 +83,8 @@ BSV_CHAINAPI_LIVE=1 /home/david/.gvm/gos/go1.26.0/bin/go test -run Live ./...
 
 - 只测试 `GetUTXOs`、`GetTipHeight`、`GetTxDetail`
 - 不做真实 `Broadcast` 测试
+
+补充：
+
+- `Broadcast` 的多路接盘策略由 `TxSubmitRouter` 负责，route 本身只负责单个上游适配。
+- `GetRouteInfoContext` 用于启动期校验 route 是否真实存在、以及是否支持提交能力。

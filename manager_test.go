@@ -23,6 +23,15 @@ type testEndpoint struct {
 	calls []time.Time
 }
 
+func (e *testEndpoint) Capabilities() []Capability {
+	return []Capability{
+		CapabilityBroadcast,
+		CapabilityGetTipHeight,
+		CapabilityGetTxDetail,
+		CapabilityGetUTXOs,
+	}
+}
+
 func (e *testEndpoint) GetUTXOsContext(ctx context.Context, address string) ([]UTXO, error) {
 	e.mu.Lock()
 	e.calls = append(e.calls, time.Now())
@@ -116,6 +125,27 @@ func TestManagerProtectsSameRouteWithoutBlockingOtherRoute(t *testing.T) {
 	diffOther := epB.calls[0].Sub(epA.calls[0])
 	if diffOther > 25*time.Millisecond || diffOther < -25*time.Millisecond {
 		t.Fatalf("different routes should not be serialized, diff=%s", diffOther)
+	}
+}
+
+func TestManagerRouteInfoContext(t *testing.T) {
+	manager, err := NewManagerWithProviders(Config{
+		Routes: []RouteConfig{
+			{Provider: "stub", Network: "test", Profile: "info"},
+		},
+	}, testProvider{name: "stub", endpoint: &testEndpoint{}})
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	info, err := manager.GetRouteInfoContext(context.Background(), Route{Provider: "stub", Network: "test", Profile: "info"})
+	if err != nil {
+		t.Fatalf("get route info failed: %v", err)
+	}
+	if info.Route.Provider != "stub" || info.Route.Network != "test" || info.Route.Profile != "info" {
+		t.Fatalf("unexpected route info route: %+v", info.Route)
+	}
+	if len(info.Capabilities) != 4 {
+		t.Fatalf("unexpected capabilities: %+v", info.Capabilities)
 	}
 }
 

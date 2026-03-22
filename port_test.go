@@ -52,4 +52,12 @@ func TestPortServerAndClientRoundTrip(t *testing.T) {
 	if txj.TxID != "tx1" {
 		t.Fatalf("unexpected tx detail: %+v", txj)
 	}
+
+	info, err := client.GetRouteInfoContext(context.Background(), route)
+	if err != nil {
+		t.Fatalf("get route info failed: %v", err)
+	}
+	if info.Route.Provider != "stub" || len(info.Capabilities) != 4 {
+		t.Fatalf("unexpected route info: %+v", info)
+	}
 }

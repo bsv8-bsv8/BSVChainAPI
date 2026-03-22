@@ -43,8 +43,9 @@ func (c RouteConfig) Validate() error {
 }
 
 type ProtectConfig struct {
-	// MinInterval 定义同一路由对同一上游的最小调用间隔。
-	// 保护以 route/profile 为桶，不做全局串行，避免不同服务商互相阻塞。
+	// MinInterval 定义同一路由对同一上游实例的最小调用间隔。
+	// 保护挂在 provider endpoint 外层壳上，以 route/profile 为桶，
+	// 不做全局串行，避免不同上游彼此阻塞。
 	MinInterval time.Duration `json:"min_interval,omitempty"`
 }
 

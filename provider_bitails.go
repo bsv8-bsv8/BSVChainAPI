@@ -26,6 +26,15 @@ func (bitailsProvider) Name() string {
 	return BitailsProvider
 }
 
+func (bitailsProvider) Capabilities() []Capability {
+	return []Capability{
+		CapabilityBroadcast,
+		CapabilityGetTipHeight,
+		CapabilityGetTxDetail,
+		CapabilityGetUTXOs,
+	}
+}
+
 func (bitailsProvider) NewEndpoint(cfg RouteConfig) (Endpoint, error) {
 	route := cfg.Route()
 	if route.Provider != BitailsProvider {
@@ -49,6 +58,10 @@ func (bitailsProvider) NewEndpoint(cfg RouteConfig) (Endpoint, error) {
 	return &bitailsEndpoint{
 		raw: bitails.NewClient(baseURL, auth),
 	}, nil
+}
+
+func (e *bitailsEndpoint) Capabilities() []Capability {
+	return bitailsProvider{}.Capabilities()
 }
 
 func (e *bitailsEndpoint) GetUTXOsContext(ctx context.Context, address string) ([]UTXO, error) {
